@@ -1,0 +1,20 @@
+[project]
+name = "pipelines"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Lucie Xu",email = "luciexu@google.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-cloud-bigquery (>=3.38.0,<4.0.0)",
+    "google-cloud-aiplatform (>=1.124.0,<2.0.0)",
+    "pyyaml (>=6.0.3,<7.0.0)",
+    "kfp (>=2.14.6,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

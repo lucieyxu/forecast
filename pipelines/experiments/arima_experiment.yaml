@@ -1,0 +1,31 @@
+Experiment:
+  name: "citibike-arima"
+  description: "ARIMA and ARIMA+XREG modeling experiments for citbike weekly prediction."
+BQ:
+  dataset: citibike
+  table_prepped: citibike_trips_prepped
+  model_name: citibike-arima
+Model:
+  type: "ARIMA_PLUS"
+  target_col: "qty"
+  time_col: "monday_of_week"
+  series_col: "time_serie_id"
+  split_col: "split"
+  covariate_cols:
+    - start_station_id
+    - start_station_latitude
+    - start_station_longitude
+    - end_station_id
+    - end_station_latitude
+    - end_station_longitude
+    - percentage_rain
+  forecast_granularity: "WEEKLY"
+  horizon: 10
+  train_date_lower: "2013-07-01"
+  val_date_upper: "2016-01-01" # We are stopping the rolling window before 2016
+  test_date_upper: "2016-09-26" # The test folds will be rolled on 2016
+  options:
+    HOLIDAY_REGION:
+      - "GLOBAL"
+      - "US"
+    AUTO_ARIMA_MAX_ORDER: 5
