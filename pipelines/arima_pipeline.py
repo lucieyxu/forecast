@@ -41,7 +41,7 @@ def generate_forecasting_pipeline(
     """Generates the main forecasting pipeline that runs train/eval per fold
     and aggregates results. Assumes characteristics are pre-generated."""
 
-    @pipeline(name=f"rolling-window-training-pipeline-{experiment_run_name}")
+    @pipeline(name=f"arima-training-pipeline-{experiment_run_name}")
     def forecasting_pipeline():
         with ParallelFor(time_splits_range) as fold:
             data_prepped_filtered_fold_n = (
@@ -243,7 +243,11 @@ if __name__ == "__main__":
         split_column=f'{experiment_config["Model"]["split_col"]}',
         forecast_granularity=experiment_config["Model"]["forecast_granularity"],
         options=experiment_config["Model"]["options"],
-        covariates=experiment_config["Model"]["covariate_cols"],
+        covariates=(
+            experiment_config["Model"]["covariate_cols"] 
+            if "covariate_cols" in experiment_config["Model"] 
+            else []
+        ),
         time_splits_range=list(range(len_time_splits)),
         pipeline_bucket=PIPELINE_BUCKET,
         rolling_window_time_split_gcs_name=blob_name,

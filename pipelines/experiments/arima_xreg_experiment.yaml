@@ -6,11 +6,19 @@ BQ:
   table_prepped: citibike_trips_prepped
   model_name: citibike-arima
 Model:
-  type: "ARIMA_PLUS"
+  type: "ARIMA_PLUS_XREG"
   target_col: "qty"
   time_col: "monday_of_week"
   series_col: "time_serie_id"
   split_col: "split"
+  covariate_cols:
+    - start_station_id
+    - start_station_latitude
+    - start_station_longitude
+    - end_station_id
+    - end_station_latitude
+    - end_station_longitude
+    - percentage_rain
   forecast_granularity: "WEEKLY"
   horizon: 10
   train_date_lower: "2013-07-01"
