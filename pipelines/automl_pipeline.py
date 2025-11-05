@@ -5,14 +5,14 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 import yaml
-from arima.eval import evaluate_model
-from arima.prediction import predictions
-from arima.train import train_arima_model
+from automl.eval import evaluate_model
+from automl.prediction import predictions
+from automl.train import train_model
 from config import PIPELINE_BUCKET, PROJECT_ID, REGION
 from common.split_train_test import split_train_test
 from google.cloud import aiplatform, storage
 from kfp.compiler import Compiler
-from kfp.dsl import Collected, ParallelFor, pipeline
+from kfp.dsl import ParallelFor, pipeline
 from kfp.dsl.base_component import BaseComponent
 from time_split import TimeSplit
 
@@ -22,7 +22,6 @@ def generate_forecasting_pipeline(
     region: str,
     bq_dataset_name: str,
     bq_table_prepped: str,
-    bq_model_name: str,
     experiment_name: str,
     experiment_description: str,
     experiment_run_name: str,
@@ -31,24 +30,40 @@ def generate_forecasting_pipeline(
     time_column: str,
     series_column: str,
     split_column: str,
+    optimization_objective: str,
+    attributes_columns: List[str],
+    covariates_columns_known: List[str],
+    covariates_columns_unknown: List[str],
     forecast_granularity: str,
-    options: Dict[str, Any],
-    covariates: List[str],
+    context_window: int,
+    holiday_regions: List[str],
+    budget_milli_node_hours: int,
     time_splits_range: List[int],
     pipeline_bucket: str,
     rolling_window_time_split_gcs_name: str,
+    horizon: int,
 ) -> BaseComponent:
     """Generates the main forecasting pipeline that runs train/eval per fold
     and aggregates results. Assumes characteristics are pre-generated."""
 
-    @pipeline(name=f"arima-training-pipeline-{experiment_run_name}")
+    @pipeline(
+        name=f"automl-training-training-{experiment_run_name}"
+    )
     def forecasting_pipeline():
         with ParallelFor(time_splits_range) as fold:
+            if model_type == "AutoMLForecastingTrainingJob":
+                experiment_run_name_fold_n = (
+                    f"l2l-context{context_window}-{experiment_run_name}-fold-{fold}"
+                )
+            elif model_type == "TimeSeriesDenseEncoderForecastingTrainingJob":
+                experiment_run_name_fold_n = (
+                    f"tide-context{context_window}-{experiment_run_name}-fold-{fold}"
+                )
+            else:
+                raise ValueError(f"Model not supported {model_type}")
             data_prepped_filtered_fold_n = (
-                f"{bq_table_prepped}-fold-{fold}-{experiment_run_name}"
+                f"{bq_table_prepped}-{experiment_run_name_fold_n}"
             )
-            bq_model_name_fold_n = f"{bq_model_name}-fold-{fold}-{experiment_run_name}"
-            experiment_run_name_fold_n = f"{experiment_run_name}-fold-{fold}"
 
             split_train_test_op = split_train_test(
                 project_id=project_id,
@@ -63,11 +78,11 @@ def generate_forecasting_pipeline(
             )
 
             train_model_task = (
-                train_arima_model(
+                train_model(
                     project_id=project_id,
+                    region=region,
                     bq_dataset_name=bq_dataset_name,
                     bq_table_prepped=data_prepped_filtered_fold_n,
-                    bq_model_name=bq_model_name_fold_n,
                     experiment_name=experiment_name,
                     experiment_description=experiment_description,
                     experiment_run_name=experiment_run_name_fold_n,
@@ -76,9 +91,14 @@ def generate_forecasting_pipeline(
                     time_column=time_column,
                     series_column=series_column,
                     split_column=split_column,
+                    optimization_objective=optimization_objective,
+                    attributes_columns=attributes_columns,
+                    covariates_columns_known=covariates_columns_known,
+                    covariates_columns_unknown=covariates_columns_unknown,
                     forecast_granularity=forecast_granularity,
-                    options=options,
-                    covariates=covariates,
+                    context_window=context_window,
+                    holiday_regions=holiday_regions,
+                    budget_milli_node_hours=budget_milli_node_hours,
                     fold=fold,
                     pipeline_bucket=pipeline_bucket,
                     rolling_window_time_split_gcs_name=rolling_window_time_split_gcs_name,
@@ -91,17 +111,17 @@ def generate_forecasting_pipeline(
                 predictions(
                     project_id=project_id,
                     bq_dataset_name=bq_dataset_name,
-                    bq_table_prepped=data_prepped_filtered_fold_n,
-                    bq_model_name=bq_model_name_fold_n,
                     experiment_name=experiment_name,
                     experiment_run_name=experiment_run_name_fold_n,
                     model_type=model_type,
                     time_column=time_column,
                     series_column=series_column,
                     target_column=target_column,
-                    covariates=covariates,
+                    attributes_columns=attributes_columns,
+                    covariates_columns_known=covariates_columns_known,
+                    covariates_columns_unknown=covariates_columns_unknown,
+                    context_window=context_window,
                     forecast_granularity=forecast_granularity,
-                    options=options,
                     fold=fold,
                     pipeline_bucket=pipeline_bucket,
                     rolling_window_time_split_gcs_name=rolling_window_time_split_gcs_name,
@@ -113,24 +133,14 @@ def generate_forecasting_pipeline(
             evaluate_model_task = (
                 evaluate_model(
                     project_id=project_id,
-                    location=region,
+                    region=region,
                     bq_dataset_name=bq_dataset_name,
-                    bq_table_prepped=data_prepped_filtered_fold_n,
-                    bq_model_name=bq_model_name_fold_n,
                     experiment_name=experiment_name,
                     experiment_description=experiment_description,
                     experiment_run_name=experiment_run_name_fold_n,
-                    model_type=model_type,
                     time_column=time_column,
                     series_column=series_column,
                     target_column=target_column,
-                    split_column=split_column,
-                    covariates=covariates,
-                    forecast_granularity=forecast_granularity,
-                    options=options,
-                    fold=fold,
-                    pipeline_bucket=pipeline_bucket,
-                    rolling_window_time_split_gcs_name=rolling_window_time_split_gcs_name,
                 )
                 .set_retry(2)
                 .after(train_model_task)
@@ -191,11 +201,12 @@ if __name__ == "__main__":
         help="Local path to experiment yaml to use",
     )
     args = parser.parse_args()
+    
     with open(args.experiment, "r") as file:
         experiment_config = yaml.safe_load(file)
 
     experiment_name = experiment_config["Experiment"]["name"]
-    horizon = experiment_config["Model"]["horizon"]
+    horizon = experiment_config["Model"].get("horizon", 10)
     window_step_size = experiment_config["Model"].get("window_step_size", horizon)
 
     time_splits: List[Dict[str, Any]] = create_rolling_windows(
@@ -232,7 +243,6 @@ if __name__ == "__main__":
         region=REGION,
         bq_dataset_name=experiment_config["BQ"]["dataset"],
         bq_table_prepped=experiment_config["BQ"]["table_prepped"],
-        bq_model_name=experiment_config["BQ"]["model_name"],
         experiment_name=experiment_name,
         experiment_description=experiment_config["Experiment"]["description"],
         experiment_run_name=experiment_run_name,
@@ -240,20 +250,28 @@ if __name__ == "__main__":
         target_column=experiment_config["Model"]["target_col"],
         time_column=experiment_config["Model"]["time_col"],
         series_column=experiment_config["Model"]["series_col"],
-        split_column=f'{experiment_config["Model"]["split_col"]}',
+        split_column=experiment_config["Model"]["split_col"],
+        optimization_objective=experiment_config["Model"]["optimization_objective"],
         forecast_granularity=experiment_config["Model"]["forecast_granularity"],
-        options=experiment_config["Model"]["options"],
-        covariates=(
-            experiment_config["Model"]["covariate_cols"] 
-            if "covariate_cols" in experiment_config["Model"] 
+        attributes_columns=experiment_config["Model"]["attributes"],
+        covariates_columns_known=experiment_config["Model"]["covariates_known"],
+        covariates_columns_unknown=(
+            experiment_config["Model"]["covariates_unknown"]
+            if "covariates_unknown" in experiment_config["Model"]
             else []
         ),
+        context_window=experiment_config["Model"]["context_window"],
+        holiday_regions=experiment_config["Model"]["holiday_regions"],
+        budget_milli_node_hours=experiment_config["Model"][
+            "budget_milli_node_hours"
+        ],
         time_splits_range=list(range(len_time_splits)),
         pipeline_bucket=PIPELINE_BUCKET,
         rolling_window_time_split_gcs_name=blob_name,
+        horizon=horizon,
     )
 
-    forecasting_pipeline_def_file = f"arima-training-pipeline-{experiment_run_name}.json"
+    forecasting_pipeline_def_file = f"automl-training-pipeline-{experiment_run_name}.json"
     compiler.compile(
         pipeline_func=forecasting_pipeline_func,
         package_path=forecasting_pipeline_def_file,
@@ -262,7 +280,7 @@ if __name__ == "__main__":
     training_job = aiplatform.PipelineJob(
         display_name=f"{experiment_name}-forecasting-pipeline-{experiment_run_name}",
         template_path=forecasting_pipeline_def_file,
-        pipeline_root=f"gs://{PIPELINE_BUCKET}/pipeline_root/{experiment_name}-arima-pipeline-{experiment_run_name}",
+        pipeline_root=f"gs://{PIPELINE_BUCKET}/pipeline_root/{experiment_name}-automl-pipeline-{experiment_run_name}",
         enable_caching=True,
     )
     print(
