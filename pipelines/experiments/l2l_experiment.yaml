@@ -1,0 +1,32 @@
+Experiment:
+  name: "citibike-automl"
+  description: "Deep Learning with AutoML modeling experiments for citbike weekly prediction."
+BQ:
+  dataset: citibike
+  table_prepped: citibike_trips_prepped
+  model_name: citibike-arima
+Model:
+  type: AutoMLForecastingTrainingJob
+  target_col: "qty"
+  time_col: "monday_of_week"
+  series_col: "time_serie_id"
+  split_col: "split"
+  optimization_objective: "minimize-mae"
+  attributes:
+    - start_station_id
+    - start_station_latitude
+    - start_station_longitude
+    - end_station_id
+    - end_station_latitude
+    - end_station_longitude
+  covariates_known:
+    - percentage_rain
+  forecast_granularity: "WEEK"
+  train_date_lower: "2013-07-01"
+  val_date_upper: "2016-01-01" # We are stopping the rolling window before 2016
+  test_date_upper: "2016-09-26" # The test folds will be rolled on 2016
+  context_window: 20
+  holiday_regions:
+    - GLOBAL
+    - US
+  budget_milli_node_hours: 1000 # Minimum is 1000
