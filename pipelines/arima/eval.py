@@ -27,7 +27,6 @@ def evaluate_model(
     time_column: str,
     series_column: str,
     target_column: str,
-    split_column: str,
     covariates: List[str],
     forecast_granularity: str,
     options: Dict[str, Any],
@@ -50,7 +49,6 @@ def evaluate_model(
         time_column (str): Timestamp column to use for forecast
         series_column (str): Column to use to get the forecast granularity. Each unique ID will be a time series
         target_column (str): Column with value to forecast
-        split_column (str): Column containing categories for train val test
         forecast_granularity (str): DAILY or WEEKLY
         options (Dict[str, Any]): Model options
         fold (int): when using rolling window training pipeline

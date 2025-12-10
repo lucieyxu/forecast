@@ -124,7 +124,6 @@ def generate_forecasting_pipeline(
                     time_column=time_column,
                     series_column=series_column,
                     target_column=target_column,
-                    split_column=split_column,
                     covariates=covariates,
                     forecast_granularity=forecast_granularity,
                     options=options,
